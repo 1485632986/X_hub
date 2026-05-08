@@ -40,14 +40,12 @@ export class HttpClient {
       httpRequest.destroy();
     }
   }
-
   /**
    * GET request
    */
   static async get(url: string, header: Record<string, string> = {}): Promise<HttpResponse> {
-    return this.request(url, http.RequestMethod.GET, header);
+    return HttpClient.request(url, http.RequestMethod.GET, header);
   }
-
   /**
    * POST request with JSON body
    */
@@ -56,10 +54,9 @@ export class HttpClient {
     body: object,
     header: Record<string, string> = {}
   ): Promise<HttpResponse> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...header
-    };
-    return this.request(url, http.RequestMethod.POST, headers, JSON.stringify(body));
+    const headers: Record<string, string> = Object.assign({
+      'Content-Type': 'application/json'
+    }, header);
+    return HttpClient.request(url, http.RequestMethod.POST, headers, JSON.stringify(body));
   }
 }
