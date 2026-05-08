@@ -1,13 +1,17 @@
 import { router } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { EmbyApi } from '../services/EmbyApi';
 import { SessionInfo } from '../models/EmbyTypes';
+
+const TAG = 'LoginPage';
+const DOMAIN = 0xFF00;
 
 @Entry
 @Component
 struct Index {
-  @State serverUrl: string = '';
-  @State username: string = '';
-  @State password: string = '';
+  @State serverUrl: string = 'http://nas.998038.xyz:2345';
+  @State username: string = 'daiwenke';
+  @State password: string = '789456';
   @State isLoading: boolean = false;
   @State errorMsg: string = '';
 
@@ -28,6 +32,8 @@ struct Index {
     this.isLoading = true;
     this.errorMsg = '';
 
+    hilog.info(DOMAIN, TAG, `Connecting to ${this.serverUrl.trim()} as ${this.username.trim()}`);
+
     try {
       const session: SessionInfo = await EmbyApi.login(
         this.serverUrl.trim(),
@@ -35,6 +41,7 @@ struct Index {
         this.password
       );
 
+      hilog.info(DOMAIN, TAG, `Login success, userId: ${session.userId}`);
       router.pushUrl({
         url: 'pages/VideoList',
         params: {
@@ -45,10 +52,12 @@ struct Index {
         }
       });
     } catch (err) {
+      const msg = (err !== null && err !== undefined) ? `${err}` : 'null';
+      hilog.error(DOMAIN, TAG, `Login failed: ${msg}`);
       if (err instanceof Error) {
         this.errorMsg = `连接失败: ${err.message}`;
       } else {
-        this.errorMsg = '连接失败: 未知错误';
+        this.errorMsg = `连接失败: ${msg}`;
       }
     } finally {
       this.isLoading = false;
@@ -70,7 +79,7 @@ struct Index {
         .fontColor('#B3B3B3')
         .margin({ bottom: 48 })
 
-      TextInput({ placeholder: '服务器地址 (如 http://192.168.1.100:8096)', text: this.serverUrl })
+      TextInput({ placeholder: '服务器地址 (如 http://nas.example.com:2345)', text: this.serverUrl })
         .type(InputType.URL)
         .onChange((value: string) => { this.serverUrl = value; })
         .width('90%')

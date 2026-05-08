@@ -1,4 +1,8 @@
 import { http } from '@kit.NetworkKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+
+const TAG = 'HttpClient';
+const DOMAIN = 0xFF00;
 
 /**
  * HTTP response wrapper
@@ -36,6 +40,10 @@ export class HttpClient {
         statusCode: response.responseCode,
         data: response.result as string
       };
+    } catch (err) {
+      const msg = (err !== null && err !== undefined) ? `${err}` : '未知网络错误';
+      hilog.error(DOMAIN, TAG, `HTTP request failed: ${msg}, url: ${url}`);
+      throw new Error(msg);
     } finally {
       httpRequest.destroy();
     }
@@ -45,7 +53,7 @@ export class HttpClient {
    * GET request
    */
   static async get(url: string, header: Record<string, string> = {}): Promise<HttpResponse> {
-    return this.request(url, http.RequestMethod.GET, header);
+    return HttpClient.request(url, http.RequestMethod.GET, header);
   }
 
   /**
@@ -56,10 +64,12 @@ export class HttpClient {
     body: object,
     header: Record<string, string> = {}
   ): Promise<HttpResponse> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...header
-    };
-    return this.request(url, http.RequestMethod.POST, headers, JSON.stringify(body));
+    const headers: Record<string, string> = {};
+    headers['Content-Type'] = 'application/json';
+    const keys: string[] = Object.keys(header);
+    for (let i = 0; i < keys.length; i++) {
+      headers[keys[i]] = header[keys[i]];
+    }
+    return HttpClient.request(url, http.RequestMethod.POST, headers, JSON.stringify(body));
   }
 }

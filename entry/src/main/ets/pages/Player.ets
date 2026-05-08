@@ -1,8 +1,8 @@
 import { router } from '@kit.ArkUI';
 import { media } from '@kit.MediaKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { EmbyApi } from '../services/EmbyApi';
-import { CodecCapabilityService } from '../services/CodecCapabilityService';
 import { SessionInfo, MediaItem, MediaSource } from '../models/EmbyTypes';
 
 const TAG = 'PlayerPage';
@@ -35,6 +35,7 @@ struct Player {
 
   private avPlayer: media.AVPlayer | undefined = undefined;
   private controlsTimer: number = -1;
+  private fallbackAttempt: number = 0;
 
   // Received from router
   private itemId: string = '';
@@ -73,13 +74,12 @@ struct Player {
    */
   async prepareStream(): Promise<void> {
     try {
-      // Fetch full item details with MediaSource/MediaStreams
       this.mediaItem = await EmbyApi.getItemDetail(this.session, this.itemId);
+      hilog.info(DOMAIN, TAG, `Item detail loaded, MediaSources: ${this.mediaItem.MediaSources?.length || 0}`);
 
       if (this.mediaItem.MediaSources && this.mediaItem.MediaSources.length > 0) {
         this.mediaSource = this.mediaItem.MediaSources[0];
 
-        // Extract video stream info
         const videoStream = EmbyApi.getVideoStream(this.mediaSource);
         if (videoStream) {
           this.codecName = videoStream.Codec || videoStream.VideoCodec || 'unknown';
@@ -91,39 +91,21 @@ struct Player {
             this.bitrateDisplay = `${mbps} Mbps`;
           }
 
-          // Check if device can hardware-decode this codec
-          const canHwDecode = await CodecCapabilityService.shouldUseHardwareDecode(this.codecName);
-          this.isHardwareDecode = canHwDecode;
-          this.isFallbackMode = !canHwDecode;
+          this.isHardwareDecode = true;
+          this.isFallbackMode = false;
 
           hilog.info(DOMAIN, TAG,
-            `Codec: ${this.codecName}, HW: ${canHwDecode}, Res: ${this.resolution}, Range: ${this.videoRange}`);
-
-          if (canHwDecode) {
-            // Direct play with hardware decoding
-            this.streamUrl = EmbyApi.getStreamUrl(this.session, this.itemId, this.mediaSource.Id);
-          } else {
-            // Fallback: request server-side transcoding to H.264
-            this.streamUrl = EmbyApi.getTranscodeStreamUrl(
-              this.session,
-              this.itemId,
-              this.mediaSource.Id,
-              'h264',
-              'aac',
-              1920
-            );
-          }
-        } else {
-          // No video stream info — try direct play anyway
-          this.streamUrl = EmbyApi.getStreamUrl(this.session, this.itemId, this.mediaSource.Id);
+            `Codec: ${this.codecName}, Res: ${this.resolution}, Range: ${this.videoRange}, Container: ${this.mediaSource.Container}`);
         }
+
+        this.streamUrl = EmbyApi.getStreamUrl(this.session, this.itemId, this.mediaSource.Id);
       } else {
-        // No MediaSource info — try direct play with item ID
         this.streamUrl = EmbyApi.getStreamUrl(this.session, this.itemId);
       }
+
+      hilog.info(DOMAIN, TAG, `Stream URL: ${this.streamUrl.substring(0, 120)}`);
     } catch (err) {
       hilog.error(DOMAIN, TAG, `Failed to prepare stream: ${err}`);
-      // Fallback to basic stream URL
       this.streamUrl = EmbyApi.getStreamUrl(this.session, this.itemId);
     }
   }
@@ -197,8 +179,8 @@ struct Player {
       });
 
       // Error handler
-      this.avPlayer.on('error', (err: media.AVPlayerError) => {
-        hilog.error(DOMAIN, TAG, `AVPlayer error: ${JSON.stringify(err)}`);
+      this.avPlayer.on('error', (err: BusinessError) => {
+        hilog.error(DOMAIN, TAG, `AVPlayer error: ${err.message}`);
         this.handlePlaybackError();
       });
 
@@ -214,29 +196,35 @@ struct Player {
   }
 
   /**
-   * Handle playback error — try fallback to HLS transcoding if not already in fallback mode.
+   * Handle playback error — try fallback strategies.
+   * Attempt 0 = HLS, 1 = direct play, 2 = transcode, 3 = give up
    */
   private handlePlaybackError(): void {
-    if (!this.isFallbackMode && this.mediaSource) {
-      // Try HLS fallback with server-side transcoding
-      hilog.warn(DOMAIN, TAG, 'Direct play failed, falling back to HLS transcoding');
+    this.fallbackAttempt++;
+    hilog.warn(DOMAIN, TAG, `Playback failed, fallback attempt ${this.fallbackAttempt}`);
+
+    if (this.fallbackAttempt === 1 && this.mediaSource) {
+      hilog.warn(DOMAIN, TAG, 'HLS failed, trying direct play');
       this.isFallbackMode = true;
       this.isHardwareDecode = false;
+      this.codecName = '直接播放';
+
+      this.streamUrl = EmbyApi.getDirectPlayUrl(this.session, this.itemId, this.mediaSource.Id);
+      hilog.info(DOMAIN, TAG, `Direct play URL: ${this.streamUrl.substring(0, 100)}`);
+      this.releasePlayer();
+      this.retryWithUrl(this.streamUrl);
+    } else if (this.fallbackAttempt === 2 && this.mediaSource) {
+      hilog.warn(DOMAIN, TAG, 'Direct play failed, trying transcode');
       this.codecName = 'H.264 (转码)';
 
       this.streamUrl = EmbyApi.getTranscodeStreamUrl(
-        this.session,
-        this.itemId,
-        this.mediaSource.Id,
-        'h264',
-        'aac',
-        1920
+        this.session, this.itemId, this.mediaSource.Id, 'h264', 'aac', 1920
       );
-
-      // Reset player and retry
+      hilog.info(DOMAIN, TAG, `Transcode URL: ${this.streamUrl.substring(0, 100)}`);
       this.releasePlayer();
       this.retryWithUrl(this.streamUrl);
     } else {
+      hilog.error(DOMAIN, TAG, 'All playback methods failed');
       this.errorMsg = '播放失败: 无法解码此视频';
       this.isPlaying = false;
     }
@@ -272,7 +260,7 @@ struct Player {
             this.isPrepared = false;
             break;
           case 'error':
-            this.errorMsg = '播放失败: 转码播放也失败了';
+            this.handlePlaybackError();
             break;
           default:
             break;
@@ -286,9 +274,9 @@ struct Player {
         }
       });
 
-      this.avPlayer.on('error', (err: media.AVPlayerError) => {
-        hilog.error(DOMAIN, TAG, `Fallback AVPlayer error: ${JSON.stringify(err)}`);
-        this.errorMsg = '播放失败: 转码播放也失败了';
+      this.avPlayer.on('error', (err: BusinessError) => {
+        hilog.error(DOMAIN, TAG, `Fallback AVPlayer error: ${err.message}`);
+        this.handlePlaybackError();
       });
 
       this.avPlayer.url = url;
@@ -402,6 +390,11 @@ struct Player {
               .fontColor('#B3B3B3')
               .margin({ bottom: 16 })
           }
+          Text(`URL: ${this.streamUrl.substring(0, 80)}...`)
+            .fontSize(10)
+            .fontColor('#666666')
+            .margin({ bottom: 16 })
+            .width('90%')
           Button('返回')
             .type(ButtonType.Capsule)
             .width(120)
@@ -428,6 +421,14 @@ struct Player {
             .fontSize(14)
             .fontColor('#FFFFFF')
             .margin({ top: 12 })
+          if (this.streamUrl) {
+            Text(this.streamUrl.substring(0, 60))
+              .fontSize(10)
+              .fontColor('#666666')
+              .margin({ top: 8 })
+              .width('80%')
+              .textAlign(TextAlign.Center)
+          }
         }
         .width('100%')
         .height('100%')
@@ -563,7 +564,7 @@ struct Player {
               .height(24)
               .onChange((value: number, mode: SliderChangeMode) => {
                 this.onSeekChange(value);
-                if (mode === SliderChangeMode.Release) {
+                if (mode === SliderChangeMode.End) {
                   this.seekTo(value);
                 }
               })

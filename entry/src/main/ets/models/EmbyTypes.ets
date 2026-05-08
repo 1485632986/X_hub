@@ -36,6 +36,13 @@ export interface ItemsResponse {
   StartIndex: number;
 }
 
+/** Image tag info for a media item */
+export interface ImageTags {
+  Primary?: string;
+  Logo?: string;
+  Thumb?: string;
+}
+
 /** A single media item */
 export interface MediaItem {
   Id: string;
@@ -49,11 +56,7 @@ export interface MediaItem {
   RunTimeTicks?: number;
   OfficialRating?: string;
   CommunityRating?: number;
-  ImageTags?: {
-    Primary?: string;
-    Logo?: string;
-    Thumb?: string;
-  };
+  ImageTags?: ImageTags;
   BackdropImageTags?: string[];
   SeriesName?: string;
   SeasonName?: string;

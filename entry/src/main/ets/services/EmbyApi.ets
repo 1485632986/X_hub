@@ -27,6 +27,16 @@ function buildAuthHeader(token?: string): string {
 }
 
 /**
+ * Build common auth headers for Emby API requests
+ */
+function buildHeaders(accessToken: string): Record<string, string> {
+  return {
+    'X-Emby-Token': accessToken,
+    'X-Emby-Authorization': buildAuthHeader(accessToken)
+  };
+}
+
+/**
  * Emby API Service
  */
 export class EmbyApi {
@@ -62,8 +72,8 @@ export class EmbyApi {
     if (response.statusCode !== 200) {
       let errorMsg = `HTTP ${response.statusCode}`;
       try {
-        const errObj = JSON.parse(response.data);
-        errorMsg = errObj.message || errObj.ErrorMessage || errorMsg;
+        const errObj: Record<string, string> = JSON.parse(response.data) as Record<string, string>;
+        errorMsg = errObj['message'] || errObj['ErrorMessage'] || errorMsg;
       } catch (_e) {
         // ignore parse error
       }
@@ -103,9 +113,7 @@ export class EmbyApi {
       `StartIndex=${startIndex}&` +
       `Limit=${limit}`;
 
-    const header: Record<string, string> = {
-      'X-Emby-Token': session.accessToken
-    };
+    const header: Record<string, string> = buildHeaders(session.accessToken);
 
     const response = await HttpClient.get(url, header);
 
@@ -127,12 +135,10 @@ export class EmbyApi {
     session: SessionInfo,
     itemId: string
   ): Promise<MediaItem> {
-    const url = `${session.serverUrl}/Items/${itemId}?` +
+    const url = `${session.serverUrl}/Users/${session.userId}/Items/${itemId}?` +
       `Fields=Overview,MediaSources,MediaStreams,Chapters,Path`;
 
-    const header: Record<string, string> = {
-      'X-Emby-Token': session.accessToken
-    };
+    const header: Record<string, string> = buildHeaders(session.accessToken);
 
     const response = await HttpClient.get(url, header);
 
@@ -144,14 +150,27 @@ export class EmbyApi {
   }
 
   /**
-   * Build a direct play stream URL for a video item.
-   * Uses static=true for direct streaming (no server-side transcoding).
+   * Build the primary stream URL for a video item.
+   * Uses HLS master.m3u8 for maximum compatibility with AVPlayer.
    *
    * @param session       - Active session info
    * @param itemId        - Media item ID
    * @param mediaSourceId - (Optional) Specific MediaSource ID to play
    */
   static getStreamUrl(session: SessionInfo, itemId: string, mediaSourceId?: string): string {
+    let url = `${session.serverUrl}/Videos/${itemId}/master.m3u8?api_key=${session.accessToken}`;
+    if (mediaSourceId) {
+      url += `&MediaSourceId=${mediaSourceId}`;
+    }
+    url += `&VideoCodec=h264,h265,hevc&AudioCodec=aac,ac3,mp3&MaxStreamingBitrate=80000000`;
+    return url;
+  }
+
+  /**
+   * Build a direct play stream URL (static=true).
+   * Fallback when HLS fails — sends the raw file.
+   */
+  static getDirectPlayUrl(session: SessionInfo, itemId: string, mediaSourceId?: string): string {
     let url = `${session.serverUrl}/Videos/${itemId}/stream?static=true&api_key=${session.accessToken}`;
     if (mediaSourceId) {
       url += `&MediaSourceId=${mediaSourceId}`;
