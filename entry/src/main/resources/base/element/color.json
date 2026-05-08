@@ -1,0 +1,36 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#121212"
+    },
+    {
+      "name": "bg_primary",
+      "value": "#121212"
+    },
+    {
+      "name": "bg_secondary",
+      "value": "#1E1E1E"
+    },
+    {
+      "name": "bg_card",
+      "value": "#252525"
+    },
+    {
+      "name": "accent",
+      "value": "#4FC3F7"
+    },
+    {
+      "name": "text_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#B3B3B3"
+    },
+    {
+      "name": "error",
+      "value": "#F44336"
+    }
+  ]
+}

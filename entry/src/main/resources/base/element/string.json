@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Emby HarmonyOS Client"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Emby Media Player"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Emby"
+    }
+  ]
+}

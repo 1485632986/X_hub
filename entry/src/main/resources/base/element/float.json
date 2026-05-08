@@ -1,0 +1,16 @@
+{
+  "float": [
+    {
+      "name": "font_size_small",
+      "value": "12fp"
+    },
+    {
+      "name": "font_size_body",
+      "value": "14fp"
+    },
+    {
+      "name": "font_size_title",
+      "value": "20fp"
+    }
+  ]
+}
