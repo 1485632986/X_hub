@@ -38,6 +38,7 @@ export interface DeviceCodecProfile {
   supportsAV1: boolean;
   maxResolution: string;   // e.g. "4K" or "1080P"
 }
+
 /**
  * Codec MIME type constants
  */
@@ -46,7 +47,7 @@ const CODEC_MIME = {
   HEVC: 'video/hevc',      // H.265
   VP9: 'video/x-vnd.on2.vp9',
   AV1: 'video/av01',
-};
+} as const;
 
 /**
  * Codec type name mapping
@@ -69,8 +70,8 @@ export class CodecCapabilityService {
    * Results are cached after first call.
    */
   static async getDeviceCodecProfile(): Promise<DeviceCodecProfile> {
-    if (CodecCapabilityService.profile) {
-      return CodecCapabilityService.profile;
+    if (this.profile) {
+      return this.profile;
     }
 
     const hardwareCodecs: HardwareCodecInfo[] = [];
@@ -92,7 +93,8 @@ export class CodecCapabilityService {
                                codecName.toLowerCase().includes('hisi') ||
                                codecName.toLowerCase().includes('hw') ||
                                !codecName.toLowerCase().includes('sw');
-            const codecType = CodecCapabilityService.inferCodecType(mimeType, codecName);
+
+            const codecType = this.inferCodecType(mimeType, codecName);
 
             const maxWidth = capability.getMaxSupportedInstances() > 0 ? 3840 : 1920;
             const maxHeight = capability.getMaxSupportedInstances() > 0 ? 2160 : 1080;
@@ -119,19 +121,21 @@ export class CodecCapabilityService {
     } catch (err) {
       hilog.error(DOMAIN, TAG, `Failed to enumerate codecs: ${err}`);
     }
+
     // Build profile
-    CodecCapabilityService.profile = {
+    this.profile = {
       hardwareCodecs: hardwareCodecs,
-      hdrCapability: CodecCapabilityService.detectHdrCapability(),
+      hdrCapability: this.detectHdrCapability(),
       supportsH264: supportedMimeTypes.has(CODEC_MIME.AVC),
       supportsH265: supportedMimeTypes.has(CODEC_MIME.HEVC),
       supportsVP9: supportedMimeTypes.has(CODEC_MIME.VP9),
       supportsAV1: supportedMimeTypes.has(CODEC_MIME.AV1),
-      maxResolution: CodecCapabilityService.determineMaxResolution(hardwareCodecs)
+      maxResolution: this.determineMaxResolution(hardwareCodecs)
     };
-    hilog.info(DOMAIN, TAG, `Codec profile: H264=${CodecCapabilityService.profile.supportsH264}, ` +
-      `H265=${CodecCapabilityService.profile.supportsH265}, VP9=${CodecCapabilityService.profile.supportsVP9}, ` +
-      `AV1=${CodecCapabilityService.profile.supportsAV1}, MaxRes=${CodecCapabilityService.profile.maxResolution}`);
+
+    hilog.info(DOMAIN, TAG, `Codec profile: H264=${this.profile.supportsH264}, ` +
+      `H265=${this.profile.supportsH265}, VP9=${this.profile.supportsVP9}, ` +
+      `AV1=${this.profile.supportsAV1}, MaxRes=${this.profile.maxResolution}`);
 
     return this.profile;
   }
@@ -162,7 +166,7 @@ export class CodecCapabilityService {
    * @param codecType - "avc" | "hevc" | "vp9" | "av1"
    */
   static async canDecode(codecType: string): Promise<boolean> {
-    const profile = await CodecCapabilityService.getDeviceCodecProfile();
+    const profile = await this.getDeviceCodecProfile();
     switch (codecType.toLowerCase()) {
       case 'avc':
       case 'h264':
@@ -206,7 +210,7 @@ export class CodecCapabilityService {
    * Get a human-readable codec name.
    */
   static getCodecDisplayName(videoCodec: string): string {
-    const mime = CodecCapabilityService.codecToMimeType(videoCodec);
+    const mime = this.codecToMimeType(videoCodec);
     return CODEC_TYPE_NAMES[mime] || videoCodec.toUpperCase();
   }
 
@@ -215,11 +219,11 @@ export class CodecCapabilityService {
    * Returns true if a hardware decoder is available.
    */
   static async shouldUseHardwareDecode(videoCodec: string): Promise<boolean> {
-    const mime = CodecCapabilityService.codecToMimeType(videoCodec);
+    const mime = this.codecToMimeType(videoCodec);
     if (!mime) {
       return false;
     }
-    const decoder = await CodecCapabilityService.findBestDecoder(mime);
+    const decoder = await this.findBestDecoder(mime);
     return decoder !== null && decoder.isHardwareAccelerated;
   }
 
