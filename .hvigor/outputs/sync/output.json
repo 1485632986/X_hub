@@ -1,0 +1,142 @@
+{
+  "ohos-module-entry": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "E:\\project\\X_hub\\entry\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "E:\\project\\X_hub\\entry\\src\\main",
+        "RESOURCES_PATH": [
+          "E:\\project\\X_hub\\entry\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "E:\\project\\X_hub\\entry\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "E:\\project\\X_hub\\entry\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "E:\\project\\X_hub\\entry\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "E:\\project\\X_hub\\entry\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "E:\\project\\X_hub\\entry\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "E:\\project\\X_hub\\entry\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "E:\\project\\X_hub\\entry\\build\\default\\cache\\default\\default@CompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "E:\\project\\X_hub\\entry\\build\\default\\cache\\default\\default@CompileJS\\jsbundle",
+          "WORKER_LOADER": "E:\\project\\X_hub\\entry\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "E:\\project\\X_hub\\entry\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "E:\\project\\X_hub\\entry\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "E:\\project\\X_hub\\entry\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default",
+        "externalNativeOptions": {
+          "path": "./src/main/cpp/CMakeLists.txt",
+          "arguments": "",
+          "cppFlags": "-std=c++17"
+        }
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {
+        "externalNativeOptions": {
+          "path": "./src/main/cpp/CMakeLists.txt",
+          "arguments": "",
+          "cppFlags": "-std=c++17"
+        }
+      },
+      "targets": [
+        {
+          "name": "default",
+          "runtimeOS": "HarmonyOS"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-project": {
+    "SELECT_PRODUCT_NAME": "default",
+    "MODULE_BUILD_DIR": "E:\\project\\X_hub\\build",
+    "BUNDLE_NAME": "owner.media.library",
+    "BUILD_PATH": {
+      "OUTPUT_PATH": "E:\\project\\X_hub\\build\\outputs\\default"
+    },
+    "MODULES": [
+      {
+        "name": "entry",
+        "srcPath": "E:\\project\\X_hub\\entry",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "E:\\project\\X_hub"
+      }
+    ],
+    "PROFILE_OPT": {
+      "app": {
+        "signingConfigs": [
+          {
+            "name": "default",
+            "type": "HarmonyOS",
+            "material": {
+              "certpath": "C:\\Users\\dwk\\.ohos\\config\\default_X_hub_B5t7OsS0qPSMI3LmnVjo4QzgMzvzwBC-CSDXOPQ3bbc=.cer",
+              "keyAlias": "debugKey",
+              "keyPassword": "0000001B3A19ABBB645A127CF0EE5128AF83A04268B1382F6E7C39765612991C2AF7FE14759B31DF2D621D",
+              "profile": "C:\\Users\\dwk\\.ohos\\config\\default_X_hub_B5t7OsS0qPSMI3LmnVjo4QzgMzvzwBC-CSDXOPQ3bbc=.p7b",
+              "signAlg": "SHA256withECDSA",
+              "storeFile": "C:\\Users\\dwk\\.ohos\\config\\default_X_hub_B5t7OsS0qPSMI3LmnVjo4QzgMzvzwBC-CSDXOPQ3bbc=.p12",
+              "storePassword": "0000001B8FCB49E533F2A0DA7AA78C7355C7EDBD6F94B3D36F38B379BD5C53CE7CD39D19843EAA81707214"
+            }
+          }
+        ],
+        "products": [
+          {
+            "name": "default",
+            "signingConfig": "default",
+            "compatibleSdkVersion": "5.0.0(12)",
+            "runtimeOS": "HarmonyOS",
+            "targetSdkVersion": "5.0.3(15)"
+          }
+        ],
+        "buildModeSet": [
+          {
+            "name": "debug"
+          },
+          {
+            "name": "release"
+          }
+        ]
+      },
+      "modules": [
+        {
+          "name": "entry",
+          "srcPath": "./entry",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "CONFIG_PROPERTIES": {
+      "enableSignTask": true,
+      "skipNativeIncremental": false,
+      "hvigor.keepDependency": true
+    },
+    "OVERALL_PROJECT_PATHS": [
+      "E:\\project\\X_hub"
+    ],
+    "BUILD_CACHE_DIR": ""
+  },
+  "version": 1
+}
