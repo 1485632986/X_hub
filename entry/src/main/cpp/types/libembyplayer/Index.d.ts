@@ -1,0 +1,9 @@
+export const createEngine: () => number;
+export const setDataSource: (engineId: number, url: string) => void;
+export const setSurface: (engineId: number, surfaceId: number) => void;
+export const prepare: (engineId: number) => boolean;
+export const start: (engineId: number) => boolean;
+export const pause: (engineId: number) => void;
+export const resume: (engineId: number) => void;
+export const release: (engineId: number) => void;
+export const feedData: (engineId: number, data: ArrayBuffer) => void;

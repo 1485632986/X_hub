@@ -6,7 +6,9 @@ import {
   ItemsResponse,
   MediaItem,
   MediaSource,
-  SessionInfo
+  SessionInfo,
+  ServerInfo,
+  ActiveSession
 } from '../models/EmbyTypes';
 
 /**
@@ -162,14 +164,15 @@ export class EmbyApi {
     if (mediaSourceId) {
       url += `&MediaSourceId=${mediaSourceId}`;
     }
-    url += `&VideoCodec=h264,h265,hevc&AudioCodec=aac,ac3,mp3&MaxStreamingBitrate=80000000`;
+    url += `&VideoCodec=h264&AudioCodec=aac` +
+      `&Container=mp4&TranscodingContainer=mp4&TranscodingProtocol=hls` +
+      `&SegmentContainer=mp4` +
+      `&MaxStreamingBitrate=80000000` +
+      `&BreakOnNonKeyFrames=true` +
+      `&EnableSubtitlesInManifest=false`;
     return url;
   }
 
-  /**
-   * Build a direct play stream URL (static=true).
-   * Fallback when HLS fails — sends the raw file.
-   */
   static getDirectPlayUrl(session: SessionInfo, itemId: string, mediaSourceId?: string): string {
     let url = `${session.serverUrl}/Videos/${itemId}/stream?static=true&api_key=${session.accessToken}`;
     if (mediaSourceId) {
@@ -178,17 +181,27 @@ export class EmbyApi {
     return url;
   }
 
-  /**
-   * Build a transcoded stream URL (HLS/M3U8) for a video item.
-   * Use this as fallback when direct play fails or codec is unsupported.
-   *
-   * @param session       - Active session info
-   * @param itemId        - Media item ID
-   * @param mediaSourceId - MediaSource ID
-   * @param videoCodec    - Target video codec (e.g. "h264", "h265")
-   * @param audioCodec    - Target audio codec (e.g. "aac", "ac3")
-   * @param maxWidth      - Max video width
-   */
+  static getNativeStreamUrl(session: SessionInfo, itemId: string, mediaSourceId?: string): string {
+    let url = `${session.serverUrl}/Videos/${itemId}/stream?api_key=${session.accessToken}`;
+    if (mediaSourceId) {
+      url += `&MediaSourceId=${mediaSourceId}`;
+    }
+    url += `&Container=ts&VideoCodec=h264&AudioCodec=aac` +
+      `&TranscodingContainer=ts&TranscodingProtocol=http` +
+      `&MaxStreamingBitrate=80000000`;
+    return url;
+  }
+
+  static getRemuxStreamUrl(session: SessionInfo, itemId: string, mediaSourceId?: string): string {
+    let url = `${session.serverUrl}/Videos/${itemId}/stream?api_key=${session.accessToken}`;
+    if (mediaSourceId) {
+      url += `&MediaSourceId=${mediaSourceId}`;
+    }
+    url += `&VideoCodec=h264&AudioCodec=aac` +
+      `&Container=mp4`;
+    return url;
+  }
+
   static getTranscodeStreamUrl(
     session: SessionInfo,
     itemId: string,
@@ -205,6 +218,10 @@ export class EmbyApi {
       `&MaxWidth=${maxWidth}` +
       `&VideoBitrate=8000000` +
       `&AudioBitrate=192000` +
+      `&Container=mp4` +
+      `&TranscodingContainer=mp4` +
+      `&TranscodingProtocol=hls` +
+      `&SegmentContainer=mp4` +
       `&TranscodingMaxAudioChannels=6`;
   }
 
@@ -249,5 +266,72 @@ export class EmbyApi {
    */
   static getSubtitleStreams(mediaSource: MediaSource): import('../models/EmbyTypes').MediaStream[] {
     return mediaSource.MediaStreams?.filter(s => s.Type === 'Subtitle') || [];
+  }
+
+  static async getServerInfo(session: SessionInfo): Promise<ServerInfo> {
+    const url = `${session.serverUrl}/System/Info`;
+    const header: Record<string, string> = buildHeaders(session.accessToken);
+    const response = await HttpClient.get(url, header);
+    if (response.statusCode !== 200) {
+      throw new Error(`Failed to get server info: HTTP ${response.statusCode}`);
+    }
+    return JSON.parse(response.data) as ServerInfo;
+  }
+
+  static async getActiveSessions(session: SessionInfo): Promise<ActiveSession[]> {
+    const url = `${session.serverUrl}/Sessions`;
+    const header: Record<string, string> = buildHeaders(session.accessToken);
+    const response = await HttpClient.get(url, header);
+    if (response.statusCode !== 200) {
+      throw new Error(`Failed to get sessions: HTTP ${response.statusCode}`);
+    }
+    return JSON.parse(response.data) as ActiveSession[];
+  }
+
+  static async getItemsByCategory(
+    session: SessionInfo,
+    includeItemTypes: string,
+    sortBy: string = 'DateCreated',
+    sortOrder: string = 'Descending',
+    genre?: string,
+    limit: number = 20,
+    filters: string = 'IsNotFolder'
+  ): Promise<ItemsResponse> {
+    let url = `${session.serverUrl}/Users/${session.userId}/Items?` +
+      `IncludeItemTypes=${includeItemTypes}&` +
+      `Recursive=true&` +
+      `Filters=${filters}&` +
+      `Fields=Overview,PrimaryImageTag,CommunityRating,RunTimeTicks,PremiereDate,ProductionYear,Genres,People,Studios&` +
+      `SortBy=${sortBy}&` +
+      `SortOrder=${sortOrder}&` +
+      `Limit=${limit}`;
+    if (genre) {
+      url += `&Genres=${encodeURIComponent(genre)}`;
+    }
+    const header: Record<string, string> = buildHeaders(session.accessToken);
+    const response = await HttpClient.get(url, header);
+    if (response.statusCode !== 200) {
+      throw new Error(`Failed to fetch items: HTTP ${response.statusCode}`);
+    }
+    return JSON.parse(response.data) as ItemsResponse;
+  }
+
+  static async getItemDetailFull(session: SessionInfo, itemId: string): Promise<MediaItem> {
+    const url = `${session.serverUrl}/Users/${session.userId}/Items/${itemId}?` +
+      `Fields=Overview,MediaSources,MediaStreams,Chapters,Path,Genres,People,Studios,Taglines`;
+    const header: Record<string, string> = buildHeaders(session.accessToken);
+    const response = await HttpClient.get(url, header);
+    if (response.statusCode !== 200) {
+      throw new Error(`Failed to fetch item detail: HTTP ${response.statusCode}`);
+    }
+    return JSON.parse(response.data) as MediaItem;
+  }
+
+  static getBackdropUrl(session: SessionInfo, itemId: string, tag?: string, maxWidth: number = 1280): string {
+    let url = `${session.serverUrl}/Items/${itemId}/Images/Backdrop/0?maxWidth=${maxWidth}&quality=90`;
+    if (tag) {
+      url += `&tag=${tag}`;
+    }
+    return url;
   }
 }

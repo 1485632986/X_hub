@@ -43,7 +43,7 @@ struct Index {
 
       hilog.info(DOMAIN, TAG, `Login success, userId: ${session.userId}`);
       router.pushUrl({
-        url: 'pages/VideoList',
+        url: 'pages/Main',
         params: {
           serverUrl: session.serverUrl,
           accessToken: session.accessToken,

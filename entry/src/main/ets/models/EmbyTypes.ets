@@ -47,8 +47,8 @@ export interface ImageTags {
 export interface MediaItem {
   Id: string;
   Name: string;
-  Type: string;           // "Movie", "Series", "Episode", "Video"
-  MediaType: string;      // "Video", "Audio"
+  Type: string;
+  MediaType: string;
   IsFolder: boolean;
   Overview?: string;
   PremiereDate?: string;
@@ -60,9 +60,13 @@ export interface MediaItem {
   BackdropImageTags?: string[];
   SeriesName?: string;
   SeasonName?: string;
-  IndexNumber?: number;   // Episode number
-  ParentIndexNumber?: number; // Season number
+  IndexNumber?: number;
+  ParentIndexNumber?: number;
   MediaSources?: MediaSource[];
+  Genres?: string[];
+  People?: PersonInfo[];
+  Studios?: string[];
+  Taglines?: string[];
 }
 
 /**
@@ -133,4 +137,29 @@ export interface SessionInfo {
   accessToken: string;
   userId: string;
   userName: string;
+}
+
+export interface ServerInfo {
+  ServerName: string;
+  Version: string;
+  Id: string;
+  OperatingSystem: string;
+  ProductName: string;
+  LocalAddress: string;
+}
+
+export interface ActiveSession {
+  Id: string;
+  DeviceName: string;
+  Client: string;
+  LastActivityDate: string;
+  NowPlayingItem?: MediaItem;
+  IsActive: boolean;
+}
+
+export interface PersonInfo {
+  Name: string;
+  Id: string;
+  Role?: string;
+  Type: string;
 }

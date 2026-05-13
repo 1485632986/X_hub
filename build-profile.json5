@@ -1,12 +1,27 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\dwk\\.ohos\\config\\default_X_hub_B5t7OsS0qPSMI3LmnVjo4QzgMzvzwBC-CSDXOPQ3bbc=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B3A19ABBB645A127CF0EE5128AF83A04268B1382F6E7C39765612991C2AF7FE14759B31DF2D621D",
+          "profile": "C:\\Users\\dwk\\.ohos\\config\\default_X_hub_B5t7OsS0qPSMI3LmnVjo4QzgMzvzwBC-CSDXOPQ3bbc=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\dwk\\.ohos\\config\\default_X_hub_B5t7OsS0qPSMI3LmnVjo4QzgMzvzwBC-CSDXOPQ3bbc=.p12",
+          "storePassword": "0000001B8FCB49E533F2A0DA7AA78C7355C7EDBD6F94B3D36F38B379BD5C53CE7CD39D19843EAA81707214"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
-        "signingConfig": "",
+        "signingConfig": "default",
         "compatibleSdkVersion": "5.0.0(12)",
-        "runtimeOS": "HarmonyOS"
+        "runtimeOS": "HarmonyOS",
+        "targetSdkVersion": "5.0.3(15)"
       }
     ],
     "buildModeSet": [

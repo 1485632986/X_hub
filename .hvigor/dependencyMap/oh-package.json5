@@ -1,0 +1,1 @@
+{"modelVersion":"5.0.0","name":"emby-harmonyos","version":"1.0.0","description":"Minimal Emby client for HarmonyOS NEXT","main":"","author":"","license":"MIT","dependencies":{},"devDependencies":{"@ohos/hypium":"1.0.19"}}

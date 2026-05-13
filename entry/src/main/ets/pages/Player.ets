@@ -2,6 +2,9 @@ import { router } from '@kit.ArkUI';
 import { media } from '@kit.MediaKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { webview } from '@kit.ArkWeb';
+import { socket } from '@kit.NetworkKit';
+import nativePlayer from 'libembyplayer.so';
 import { EmbyApi } from '../services/EmbyApi';
 import { SessionInfo, MediaItem, MediaSource } from '../models/EmbyTypes';
 
@@ -32,10 +35,30 @@ struct Player {
   @State videoRange: string = 'SDR';
   @State isHardwareDecode: boolean = false;
   @State isFallbackMode: boolean = false;
+  @State useWebView: boolean = false;
+  private webController: webview.WebviewController = new webview.WebviewController();
+
+  // Playback controls state
+  @State currentSpeed: number = 1.0;
+  @State showSpeedPanel: boolean = false;
+  @State currentAspectRatio: string = 'fit';
+  @State showAspectPanel: boolean = false;
+
+  private readonly SPEED_OPTIONS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+  private readonly ASPECT_OPTIONS: string[] = ['fit', 'fill', '16:9', '4:3'];
+  private readonly ASPECT_LABELS: Record<string, string> = {
+    'fit': '自适应',
+    'fill': '填充',
+    '16:9': '16:9',
+    '4:3': '4:3'
+  };
 
   private avPlayer: media.AVPlayer | undefined = undefined;
   private controlsTimer: number = -1;
   private fallbackAttempt: number = 0;
+  private nativeEngineId: number = -1;
+  private xComponentController: XComponentController = new XComponentController();
+  private tcpSocket: socket.TCPSocket | null = null;
 
   // Received from router
   private itemId: string = '';
@@ -111,12 +134,11 @@ struct Player {
   }
 
   /**
-   * Initialize AVPlayer and start playback.
-   * Called after XComponent surface is ready.
+   * Initialize native hardware decoder engine.
+   * Falls back to AVPlayer if native engine fails.
    */
   async initPlayer(): Promise<void> {
     try {
-      // First, prepare the stream URL based on codec capabilities
       await this.prepareStream();
 
       if (!this.streamUrl) {
@@ -124,7 +146,117 @@ struct Player {
         return;
       }
 
-      // Create hardware-accelerated AVPlayer
+      // Try native hardware decode engine first
+      hilog.info(DOMAIN, TAG, 'Initializing native hardware decoder...');
+      this.nativeEngineId = nativePlayer.createEngine() as number;
+
+      const surfaceId: string = this.xComponentController.getXComponentSurfaceId();
+      hilog.info(DOMAIN, TAG, `Surface ID: ${surfaceId}`);
+
+      // Use continuous TS stream URL (not HLS m3u8 playlist)
+      const nativeUrl: string = EmbyApi.getNativeStreamUrl(
+        this.session, this.itemId, this.mediaSource?.Id
+      );
+      hilog.info(DOMAIN, TAG, `Native stream URL: ${nativeUrl.substring(0, 120)}`);
+
+      nativePlayer.setDataSource(this.nativeEngineId, nativeUrl);
+      nativePlayer.setSurface(this.nativeEngineId, surfaceId);
+
+      const prepared: boolean = nativePlayer.prepare(this.nativeEngineId) as boolean;
+      if (prepared) {
+        this.isPrepared = true;
+        this.isPlaying = true;
+        this.isHardwareDecode = true;
+        hilog.info(DOMAIN, TAG, 'Native hardware decoder prepared, starting HTTP stream...');
+        this.startNativeStream(nativeUrl);
+        this.startControlsTimer();
+        return;
+      }
+
+      // Native engine failed, release and fall back to AVPlayer
+      hilog.warn(DOMAIN, TAG, 'Native engine failed, falling back to AVPlayer');
+      nativePlayer.release(this.nativeEngineId);
+      this.nativeEngineId = -1;
+      this.initAVPlayer();
+
+    } catch (err) {
+      hilog.error(DOMAIN, TAG, `Player init failed: ${err}`);
+      this.initAVPlayer();
+    }
+  }
+
+  /**
+   * Stream HTTP data from ArkTS and feed to native decoder via NAPI.
+   */
+  async startNativeStream(nativeUrl: string): Promise<void> {
+    try {
+      const schemeEnd = nativeUrl.indexOf('://');
+      const hostStart = schemeEnd + 3;
+      const pathStart = nativeUrl.indexOf('/', hostStart);
+      const hostPort = nativeUrl.substring(hostStart, pathStart);
+      const path = nativeUrl.substring(pathStart);
+
+      let host = hostPort;
+      let port = 80;
+      const colonPos = hostPort.indexOf(':');
+      if (colonPos >= 0) {
+        host = hostPort.substring(0, colonPos);
+        port = parseInt(hostPort.substring(colonPos + 1));
+      }
+
+      hilog.info(DOMAIN, TAG, `Native stream connecting to ${host}:${port}`);
+
+      this.tcpSocket = socket.constructTCPSocketInstance();
+
+      await this.tcpSocket.connect({
+        address: { address: host, port: port, family: 1 }
+      });
+
+      const request = `GET ${path} HTTP/1.1\r\nHost: ${hostPort}\r\nConnection: close\r\n\r\n`;
+      await this.tcpSocket.send({ data: request });
+
+      let headersParsed = false;
+      let headerAccum: number[] = [];
+
+      this.tcpSocket.on('message', (value: Record<string, Object>) => {
+        const data = value['message'] as ArrayBuffer;
+        if (!data || data.byteLength === 0) return;
+
+        if (!headersParsed) {
+          const bytes = new Uint8Array(data);
+          for (let i = 0; i < bytes.length; i++) {
+            headerAccum.push(bytes[i]);
+          }
+          for (let i = 0; i < headerAccum.length - 3; i++) {
+            if (headerAccum[i] === 0x0D && headerAccum[i + 1] === 0x0A &&
+                headerAccum[i + 2] === 0x0D && headerAccum[i + 3] === 0x0A) {
+              headersParsed = true;
+              hilog.info(DOMAIN, TAG, 'HTTP headers parsed, streaming body data');
+              const bodyStart = i + 4;
+              if (bodyStart < headerAccum.length) {
+                const body = new Uint8Array(headerAccum.slice(bodyStart));
+                nativePlayer.feedData(this.nativeEngineId, body.buffer as ArrayBuffer);
+              }
+              headerAccum = [];
+              break;
+            }
+          }
+        } else {
+          nativePlayer.feedData(this.nativeEngineId, data);
+        }
+      });
+
+      hilog.info(DOMAIN, TAG, 'Native stream started');
+    } catch (err) {
+      hilog.error(DOMAIN, TAG, `Native stream error: ${err}`);
+    }
+  }
+
+  /**
+   * Fallback: Initialize AVPlayer (software decode).
+   */
+  async initAVPlayer(): Promise<void> {
+    try {
       this.avPlayer = await media.createAVPlayer();
 
       // State change handler
@@ -180,7 +312,7 @@ struct Player {
 
       // Error handler
       this.avPlayer.on('error', (err: BusinessError) => {
-        hilog.error(DOMAIN, TAG, `AVPlayer error: ${err.message}`);
+        hilog.error(DOMAIN, TAG, `AVPlayer error: code=${err.code}, message=${err.message}`);
         this.handlePlaybackError();
       });
 
@@ -197,36 +329,44 @@ struct Player {
 
   /**
    * Handle playback error — try fallback strategies.
-   * Attempt 0 = HLS, 1 = direct play, 2 = transcode, 3 = give up
+   * 1=direct play, 2=remux MP4, 3=HLS transcode, 4+=give up
    */
   private handlePlaybackError(): void {
     this.fallbackAttempt++;
     hilog.warn(DOMAIN, TAG, `Playback failed, fallback attempt ${this.fallbackAttempt}`);
 
     if (this.fallbackAttempt === 1 && this.mediaSource) {
-      hilog.warn(DOMAIN, TAG, 'HLS failed, trying direct play');
+      hilog.warn(DOMAIN, TAG, 'HLS failed, trying direct play (static=true)');
       this.isFallbackMode = true;
       this.isHardwareDecode = false;
       this.codecName = '直接播放';
 
       this.streamUrl = EmbyApi.getDirectPlayUrl(this.session, this.itemId, this.mediaSource.Id);
-      hilog.info(DOMAIN, TAG, `Direct play URL: ${this.streamUrl.substring(0, 100)}`);
+      hilog.info(DOMAIN, TAG, `Direct play URL: ${this.streamUrl.substring(0, 120)}`);
       this.releasePlayer();
       this.retryWithUrl(this.streamUrl);
     } else if (this.fallbackAttempt === 2 && this.mediaSource) {
-      hilog.warn(DOMAIN, TAG, 'Direct play failed, trying transcode');
-      this.codecName = 'H.264 (转码)';
+      hilog.warn(DOMAIN, TAG, 'Direct play failed, trying remux MP4 stream');
+      this.codecName = 'H.264 (Remux)';
+
+      this.streamUrl = EmbyApi.getRemuxStreamUrl(this.session, this.itemId, this.mediaSource.Id);
+      hilog.info(DOMAIN, TAG, `Remux URL: ${this.streamUrl.substring(0, 120)}`);
+      this.releasePlayer();
+      this.retryWithUrl(this.streamUrl);
+    } else if (this.fallbackAttempt === 3 && this.mediaSource) {
+      hilog.warn(DOMAIN, TAG, 'Remux failed, trying HLS transcode');
+      this.codecName = 'H.264 (HLS转码)';
 
       this.streamUrl = EmbyApi.getTranscodeStreamUrl(
         this.session, this.itemId, this.mediaSource.Id, 'h264', 'aac', 1920
       );
-      hilog.info(DOMAIN, TAG, `Transcode URL: ${this.streamUrl.substring(0, 100)}`);
+      hilog.info(DOMAIN, TAG, `HLS transcode URL: ${this.streamUrl.substring(0, 120)}`);
       this.releasePlayer();
       this.retryWithUrl(this.streamUrl);
     } else {
-      hilog.error(DOMAIN, TAG, 'All playback methods failed');
-      this.errorMsg = '播放失败: 无法解码此视频';
-      this.isPlaying = false;
+      hilog.warn(DOMAIN, TAG, 'All AVPlayer methods failed, switching to WebView');
+      this.releasePlayer();
+      this.useWebView = true;
     }
   }
 
@@ -275,7 +415,7 @@ struct Player {
       });
 
       this.avPlayer.on('error', (err: BusinessError) => {
-        hilog.error(DOMAIN, TAG, `Fallback AVPlayer error: ${err.message}`);
+        hilog.error(DOMAIN, TAG, `Fallback AVPlayer error: code=${err.code}, message=${err.message}`);
         this.handlePlaybackError();
       });
 
@@ -286,6 +426,14 @@ struct Player {
   }
 
   releasePlayer(): void {
+    if (this.tcpSocket) {
+      this.tcpSocket.close();
+      this.tcpSocket = null;
+    }
+    if (this.nativeEngineId >= 0) {
+      nativePlayer.release(this.nativeEngineId);
+      this.nativeEngineId = -1;
+    }
     if (this.avPlayer) {
       this.avPlayer.release();
       this.avPlayer = undefined;
@@ -311,6 +459,43 @@ struct Player {
     this.isSeeking = false;
     this.avPlayer.seek(Math.floor(value));
     this.currentTime = value;
+  }
+
+  setSpeed(speed: number): void {
+    if (!this.avPlayer) {
+      return;
+    }
+    this.currentSpeed = speed;
+    this.showSpeedPanel = false;
+    try {
+      const speedEnum = this.mapSpeedToEnum(speed);
+      if (speedEnum !== undefined) {
+        this.avPlayer.setSpeed(speedEnum);
+      }
+    } catch (err) {
+      hilog.error(DOMAIN, TAG, `setSpeed failed: ${err}`);
+    }
+  }
+
+  private mapSpeedToEnum(speed: number): media.PlaybackSpeed | undefined {
+    const map: Record<number, media.PlaybackSpeed> = {
+      0.5: media.PlaybackSpeed.SPEED_FORWARD_0_50_X,
+      0.75: media.PlaybackSpeed.SPEED_FORWARD_0_75_X,
+      1.0: media.PlaybackSpeed.SPEED_FORWARD_1_00_X,
+      1.25: media.PlaybackSpeed.SPEED_FORWARD_1_25_X,
+      1.5: media.PlaybackSpeed.SPEED_FORWARD_1_50_X,
+      2.0: media.PlaybackSpeed.SPEED_FORWARD_2_00_X,
+    };
+    return map[speed];
+  }
+
+  setAspectRatio(ratio: string): void {
+    this.currentAspectRatio = ratio;
+    this.showAspectPanel = false;
+  }
+
+  buildEmbyWebUrl(): string {
+    return `${this.session.serverUrl}/web/index.html#!/item?id=${this.itemId}&serverId=&context=home`;
   }
 
   onSeekChange(value: number): void {
@@ -358,9 +543,51 @@ struct Player {
   }
 
   build() {
-    Stack() {
+    if (this.useWebView) {
+      Column() {
+        Row() {
+          Text('←')
+            .fontSize(24)
+            .fontColor('#FFFFFF')
+            .padding(12)
+            .onClick(() => { router.back(); })
+          Text(this.title)
+            .fontSize(16)
+            .fontColor('#FFFFFF')
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text('原生')
+            .fontSize(13)
+            .fontColor('#4FC3F7')
+            .padding(12)
+            .onClick(() => {
+              this.useWebView = false;
+              this.fallbackAttempt = 0;
+              this.initPlayer();
+            })
+        }
+        .width('100%')
+        .height(48)
+        .backgroundColor('#1E1E1E')
+        .alignItems(VerticalAlign.Center)
+
+        Web({ src: this.buildEmbyWebUrl(), controller: this.webController })
+          .width('100%')
+          .layoutWeight(1)
+          .backgroundColor('#000000')
+          .domStorageAccess(true)
+          .javaScriptAccess(true)
+          .mixedMode(MixedMode.All)
+          .mediaPlayGestureAccess(true)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#000000')
+    } else {
+      Stack() {
       // ── Video Surface ──
-      XComponent({ id: 'video_surface', type: 'surface', libraryname: '' })
+      XComponent({ id: 'video_surface', type: 'surface', controller: this.xComponentController })
         .width('100%')
         .height('100%')
         .backgroundColor('#000000')
@@ -549,7 +776,7 @@ struct Player {
           // Spacer
           Blank()
 
-          // Bottom bar: seek bar + time
+          // Bottom bar: seek bar + time + controls
           Column() {
             Slider({
               value: this.seekValue,
@@ -582,10 +809,91 @@ struct Player {
             }
             .width('100%')
             .padding({ left: 4, right: 4 })
+
+            Row({ space: 16 }) {
+              Text(this.currentSpeed === 1.0 ? '倍速' : `${this.currentSpeed}x`)
+                .fontSize(13)
+                .fontColor(this.currentSpeed === 1.0 ? '#FFFFFF' : '#4FC3F7')
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .borderRadius(16)
+                .backgroundColor('#FFFFFF11')
+                .onClick(() => {
+                  this.showSpeedPanel = !this.showSpeedPanel;
+                  this.showAspectPanel = false;
+                })
+
+              Text(this.ASPECT_LABELS[this.currentAspectRatio])
+                .fontSize(13)
+                .fontColor(this.currentAspectRatio === 'fit' ? '#FFFFFF' : '#4FC3F7')
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .borderRadius(16)
+                .backgroundColor('#FFFFFF11')
+                .onClick(() => {
+                  this.showAspectPanel = !this.showAspectPanel;
+                  this.showSpeedPanel = false;
+                })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .margin({ top: 12 })
           }
           .width('100%')
           .padding({ left: 16, right: 16, bottom: 24, top: 8 })
           .backgroundColor('#00000066')
+
+          // Speed selection panel
+          if (this.showSpeedPanel) {
+            Column() {
+              Text('播放倍速')
+                .fontSize(14)
+                .fontColor('#B3B3B3')
+                .margin({ bottom: 12 })
+              Row({ space: 12 }) {
+                ForEach(this.SPEED_OPTIONS, (speed: number) => {
+                  Text(`${speed}x`)
+                    .fontSize(14)
+                    .fontColor(this.currentSpeed === speed ? '#000000' : '#FFFFFF')
+                    .fontWeight(this.currentSpeed === speed ? FontWeight.Bold : FontWeight.Normal)
+                    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+                    .borderRadius(20)
+                    .backgroundColor(this.currentSpeed === speed ? '#4FC3F7' : '#333333')
+                    .onClick(() => { this.setSpeed(speed); })
+                })
+              }
+            }
+            .width('90%')
+            .padding(20)
+            .backgroundColor('#1E1E1EEE')
+            .borderRadius(12)
+            .position({ x: '5%', bottom: 120 })
+          }
+
+          // Aspect ratio selection panel
+          if (this.showAspectPanel) {
+            Column() {
+              Text('画面比例')
+                .fontSize(14)
+                .fontColor('#B3B3B3')
+                .margin({ bottom: 12 })
+              Row({ space: 12 }) {
+                ForEach(this.ASPECT_OPTIONS, (ratio: string) => {
+                  Text(this.ASPECT_LABELS[ratio])
+                    .fontSize(14)
+                    .fontColor(this.currentAspectRatio === ratio ? '#000000' : '#FFFFFF')
+                    .fontWeight(this.currentAspectRatio === ratio ? FontWeight.Bold : FontWeight.Normal)
+                    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+                    .borderRadius(20)
+                    .backgroundColor(this.currentAspectRatio === ratio ? '#4FC3F7' : '#333333')
+                    .onClick(() => { this.setAspectRatio(ratio); })
+                })
+              }
+            }
+            .width('90%')
+            .padding(20)
+            .backgroundColor('#1E1E1EEE')
+            .borderRadius(12)
+            .position({ x: '5%', bottom: 120 })
+          }
         }
         .width('100%')
         .height('100%')
@@ -594,6 +902,7 @@ struct Player {
     .width('100%')
     .height('100%')
     .backgroundColor('#000000')
+    }
   }
 
   /**

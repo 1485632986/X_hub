@@ -1,0 +1,14 @@
+# ninja log v6
+34	1349	8000883176162915	CMakeFiles/embyplayer.dir/src/hw_video_decoder.cpp.o	b6a7646e47a84b34
+41	1437	8000883176238245	CMakeFiles/embyplayer.dir/src/audio_pipeline.cpp.o	1cc34b9ea6def8c9
+29	1650	8000883176112389	CMakeFiles/embyplayer.dir/src/ts_demuxer.cpp.o	9867da5bf30281c1
+47	1611	8000883176288240	CMakeFiles/embyplayer.dir/src/player_engine.cpp.o	e52a88f4d0339456
+53	1693	8000883176352214	CMakeFiles/embyplayer.dir/src/napi_init.cpp.o	be6955be628421f1
+1693	1801	8000883192755400	E:/project/X_hub/entry/build/default/intermediates/cmake/default/obj/arm64-v8a/libembyplayer.so	42cf331e0c60ae8f
+3	19	8000889063116807	clean	3c647be9adc2ad67
+32	1198	8000889664139062	CMakeFiles/embyplayer.dir/src/hw_video_decoder.cpp.o	b6a7646e47a84b34
+37	1332	8000889664189048	CMakeFiles/embyplayer.dir/src/audio_pipeline.cpp.o	1cc34b9ea6def8c9
+41	1503	8000889664234207	CMakeFiles/embyplayer.dir/src/player_engine.cpp.o	e52a88f4d0339456
+26	1536	8000889664089037	CMakeFiles/embyplayer.dir/src/ts_demuxer.cpp.o	9867da5bf30281c1
+48	1593	8000889664305924	CMakeFiles/embyplayer.dir/src/napi_init.cpp.o	be6955be628421f1
+1593	1716	8000889679756701	E:/project/X_hub/entry/build/default/intermediates/cmake/default/obj/arm64-v8a/libembyplayer.so	42cf331e0c60ae8f
